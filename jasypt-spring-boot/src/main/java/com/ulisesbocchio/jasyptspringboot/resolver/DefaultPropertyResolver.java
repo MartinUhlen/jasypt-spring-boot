@@ -52,12 +52,12 @@ public class DefaultPropertyResolver implements EncryptablePropertyResolver {
     @Override
     public String resolvePropertyValue(String value) {
         return Optional.ofNullable(value)
-                .map(environment::resolvePlaceholders)
+                .map(this::resolvePlaceholders)
                 .filter(detector::isEncrypted)
                 .map(resolvedValue -> {
                     try {
                         String unwrappedProperty = detector.unwrapEncryptedValue(resolvedValue.trim());
-                        String resolvedProperty = environment.resolvePlaceholders(unwrappedProperty);
+                        String resolvedProperty = resolvePlaceholders(unwrappedProperty);
                         return encryptor.decrypt(resolvedProperty);
                     } catch (EncryptionOperationNotPossibleException e) {
                         throw new DecryptionException("Unable to decrypt property: " + value + " resolved to: " + resolvedValue + ". Decryption of Properties failed,  make sure encryption/decryption " +
@@ -65,5 +65,27 @@ public class DefaultPropertyResolver implements EncryptablePropertyResolver {
                     }
                 })
                 .orElse(value);
+    }
+
+    /**
+     * Reentrancy guard for placeholder resolution. Since Spring Boot 4.2 the configuration property cache of the
+     * system environment is built by iterating (and therefore resolving) every value of the wrapped source; a value
+     * holding a placeholder (e.g. {@code ${spring.application.name:x}}) resolves it through the environment, which
+     * asks that same cache, not stored yet, which gets rebuilt: an endless recursion (StackOverflowError).
+     * A nested call returns the text unchanged: Spring still resolves placeholders when the property is read, and
+     * {@code ENC(...)} values reached through a placeholder are still decrypted by the nested property lookup.
+     */
+    private static final ThreadLocal<Boolean> RESOLVING_PLACEHOLDERS = ThreadLocal.withInitial(() -> Boolean.FALSE);
+
+    private String resolvePlaceholders(String text) {
+        if (RESOLVING_PLACEHOLDERS.get()) {
+            return text;
+        }
+        RESOLVING_PLACEHOLDERS.set(Boolean.TRUE);
+        try {
+            return environment.resolvePlaceholders(text);
+        } finally {
+            RESOLVING_PLACEHOLDERS.remove();
+        }
     }
 }

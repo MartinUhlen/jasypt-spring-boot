@@ -1,5 +1,6 @@
 package com.ulisesbocchio.jasyptspringboot;
 
+import org.springframework.boot.env.PropertySourceInfo;
 import org.springframework.boot.origin.Origin;
 import org.springframework.boot.origin.OriginLookup;
 import org.springframework.core.env.PropertySource;
@@ -10,7 +11,7 @@ import org.springframework.core.env.PropertySource;
  * @author Ulises Bocchio
  * @version $Id: $Id
  */
-public interface EncryptablePropertySource<T> extends OriginLookup<String> {
+public interface EncryptablePropertySource<T> extends OriginLookup<String>, PropertySourceInfo {
 
     /**
      * <p>getDelegate.</p>
@@ -64,5 +65,32 @@ public interface EncryptablePropertySource<T> extends OriginLookup<String> {
             return ((OriginLookup<String>) getDelegate()).getOrigin(key);
         }
         return null;
+    }
+
+    /**
+     * {@inheritDoc}
+     * <p>Delegates to the wrapped source, so that Spring Boot keeps treating e.g. the system environment as
+     * immutable once it is wrapped (Spring Boot 4.x moved this from {@code OriginLookup} to
+     * {@link PropertySourceInfo}).</p>
+     */
+    @Override
+    default boolean isImmutable() {
+        if (getDelegate() instanceof PropertySourceInfo info) {
+            return info.isImmutable();
+        }
+        return PropertySourceInfo.super.isImmutable();
+    }
+
+    /**
+     * {@inheritDoc}
+     * <p>Delegates to the wrapped source, so that an environment prefix set on the system environment source
+     * keeps working once it is wrapped.</p>
+     */
+    @Override
+    default String getPrefix() {
+        if (getDelegate() instanceof PropertySourceInfo info) {
+            return info.getPrefix();
+        }
+        return PropertySourceInfo.super.getPrefix();
     }
 }
